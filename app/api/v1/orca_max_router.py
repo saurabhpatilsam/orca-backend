@@ -1,9 +1,11 @@
 import datetime
 import json
 from typing import Optional, List, Union, Dict
-from fastapi import APIRouter, HTTPException, Body, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Body, Query, BackgroundTasks, Depends
 from fastapi import UploadFile, File, Form
 from starlette.responses import JSONResponse
+from app.api.dependencies.auth import get_current_active_user
+from app.services.auth.models import UserResponse
 from app.api.v1.endpoints.max_backtest import run_max_backtest_logic
 from app.api.v1.endpoints.max_live import run_orca_system
 from app.services.orca_max.helpers.enums import ENVIRONMENT, TeamWay, PointType, Contract, PointPosition
@@ -50,6 +52,7 @@ def run_orca_system_background(run_config: Dict, run_id: int):
 
 @max_router.post("/max-backtest")
 async def run_bot_backtesting(
+    current_user: UserResponse = Depends(get_current_active_user),
     accountName: str = Form(...),
     mode: str = Form(...),
     contract: str = Form(...),
@@ -86,6 +89,7 @@ async def run_bot_backtesting(
 @max_router.post("/max")
 async def run_bot_max(
     background_tasks: BackgroundTasks,
+    current_user: UserResponse = Depends(get_current_active_user),
     accountName: str = Form("APEX_136189"),
     contract: Union[Contract] = Form(),
     maxMode: Optional[str] = Form(...),
@@ -104,7 +108,6 @@ async def run_bot_max(
     # [{"tv_id"="D18156705", "ta_id"="PAAPEX1361890000008"}]
     accounts_ids: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
-    user: Optional[str] = Form("system", description="User who is running the bot"),
 ):
 
     try:
@@ -143,7 +146,7 @@ async def run_bot_max(
             "end_time": dateTo,
             "accounts_ids": parsed_accounts,
             "notes": notes,
-            "user": user,  # Add user to config for tracking
+            "user": current_user.email,  # Track authenticated user
         }
 
         # Store config in database with "queued" status
@@ -173,7 +176,7 @@ async def run_bot_max(
         record = insert_run_config(
             config_to_store,
             strategy_config=strategy_config,
-            created_by=user,
+            created_by=current_user.email,  # Use authenticated user
             status="queued"
         )
         
@@ -208,7 +211,10 @@ async def run_bot_max(
 
 
 @max_router.get("/configs/{run_id}")
-async def get_run_config_by_id(run_id: int):
+async def get_run_config_by_id(
+    run_id: int,
+    current_user: UserResponse = Depends(get_current_active_user)
+):
     """
     Get a specific run configuration by ID.
     Use this to check the status of a queued/running job.
@@ -235,6 +241,7 @@ async def get_run_config_by_id(run_id: int):
 
 @max_router.get("/configs")
 async def get_run_configs(
+    current_user: UserResponse = Depends(get_current_active_user),
     status: Optional[str] = Query(None, description="Filter by status (e.g., 'queued', 'running', 'completed', 'failed')")
 ):
     """
@@ -254,7 +261,9 @@ async def get_run_configs(
 
 
 @max_router.get("/configs/active")
-async def get_active_configs():
+async def get_active_configs(
+    current_user: UserResponse = Depends(get_current_active_user)
+):
     """
     Get all active (running) run configurations.
     
@@ -271,6 +280,7 @@ async def get_active_configs():
 @max_router.patch("/configs/{run_id}/status")
 async def update_config_status(
     run_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
     status: str = Body(..., embed=True, description="New status (e.g., 'stopped', 'completed', 'failed')")
 ):
     """
@@ -296,7 +306,10 @@ async def update_config_status(
 
 
 @max_router.post("/configs/check-duplicate")
-async def check_duplicate_config(strategy_config: Dict = Body(...)):
+async def check_duplicate_config(
+    strategy_config: Dict = Body(...),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
     """
     Check if a strategy configuration has duplicates.
     
@@ -337,7 +350,10 @@ async def check_duplicate_config(strategy_config: Dict = Body(...)):
 
 
 @max_router.get("/configs/{run_id}/duplicates")
-async def get_config_duplicates(run_id: int):
+async def get_config_duplicates(
+    run_id: int,
+    current_user: UserResponse = Depends(get_current_active_user)
+):
     """
     Find all configurations that are duplicates of a specific run.
     
