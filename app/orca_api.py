@@ -4,6 +4,7 @@ from starlette.middleware.cors import CORSMiddleware
 from app.api.health import health_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.orca_max_router import max_router
+from app.api.dependencies.auth import get_current_active_user
 from app.core.config import verify_key, VERSION, BASE_PATH
 from app.middlewares.log import LogMiddleware
 from app.middlewares.rootpath import RootPathMiddleware
@@ -36,18 +37,20 @@ api_app.add_middleware(
 )
 
 # Include routers
+# Health endpoint - PUBLIC (no auth required for monitoring)
 api_app.include_router(health_router, tags=["Health"])
 
-# Auth router - no dependencies, public access for signup/signin
+# Auth router - PUBLIC (signup/signin need to be accessible without token)
 api_app.include_router(
     auth_router,
     prefix=f"{BASE_PATH}",
 )
 
+# Trading bot endpoints - PROTECTED (requires JWT authentication)
 api_app.include_router(
     max_router,
     prefix=f"{BASE_PATH}",
-    # dependencies=[Depends(verify_key)],
+    dependencies=[Depends(get_current_active_user)],  # JWT auth required
 )
 #
 # api_app.include_router(
